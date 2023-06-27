@@ -10,6 +10,8 @@
 #include "fox.h"      // 78x81
 #include "tagFont.h"  //Rock_Salt_Regular_10
 #include <CircularBuffer.h>
+#include "ringMeter.h"
+#include <Button2.h>
 
 //PMX Data Structure
 struct nrfDataStruct{
@@ -24,15 +26,22 @@ struct nrfDataStruct{
 //adc in use
 char adcSelection[10];
 //graph labels
-String xLabel[5] = {"pm10","sum","temp","hum","adc0"};
-int values[5] = {0};
-unsigned int x = 0;
+String xLabel[5] = {"pm10","sum","temp","hum","adc0"}; //main window bar chart labels
+int values[5] = {0}; // store pmx values to iterate over them
+unsigned int x = 0; //graph iterator (track last 10 values)
 CircularBuffer<int, 11> pm10Buffer;
+uint8_t currentUIwindow = 0; //0 = main window, 1 = pm10 graph, 2 = sum graph, 3 = temp & hum graph, 4 = adc0 graph
+
+//millis delay
+unsigned long start_time, current_time, delay_time;
 
 //functions prototypes
 void getPMXdata();
+void bootScreen();
 void drawMainWindow();
 void pm10Graph();
+void tempHumGraph();
+void btnHandler(Button2& btn);
 
 //RF24
 RF24 radio(3, 10); //CE, CSN
@@ -44,6 +53,9 @@ TFT_eSprite sprite = TFT_eSprite(&tft);
 
 //Touch Wire1 in case other I2C devices are connected to Wire (most libs use Wire as default)
 TouchLib touch(Wire1, PIN_IIC_SDA, PIN_IIC_SCL, CTS820_SLAVE_ADDRESS, PIN_TOUCH_RES);
+
+//Buttons
+Button2 btnUI;
 
 void setup() {
   // init radio for reading
@@ -58,6 +70,11 @@ void setup() {
   radio.setAutoAck(false);  //size is fixed so we don't need acknoledgement
   radio.setPALevel(RF24_PA_LOW);
   radio.startListening();
+
+  // init buttons
+  btnUI.begin(14);
+  btnUI.setClickHandler(btnHandler);
+  btnUI.setDoubleClickHandler(btnHandler);
 
   // init TFT and Touch
   Wire1.begin(PIN_IIC_SDA, PIN_IIC_SCL);
@@ -75,16 +92,49 @@ void setup() {
   sprite.setTextColor(TFT_WHITE,TFT_BLACK);
   sprite.fillSprite(TFT_BLACK);
   sprite.setSwapBytes(true);
-  
+  bootScreen();
 
+  // init millis delay
+  delay_time = 1000;
+  current_time = millis();
+  start_time = current_time;
+  
 }
 
 void loop() {
 
-  getPMXdata();
-  pm10Graph();
+  current_time = millis();
+  btnUI.loop();
+  if (current_time - start_time >= delay_time) {
+    switch (currentUIwindow)
+    {
+    case 0:
+      drawMainWindow();
+      break;
+    case 1:
+      pm10Graph();
+      break;
+    case 2:
+      tft.fillScreen(TFT_BLACK);
+      tempHumGraph();
+      break;
+    case 3:
+      drawMainWindow();
+      break;
+    case 4:
+      pm10Graph();
+      break;
+    default:
+      tft.fillScreen(TFT_BLACK);
+      tft.drawString("error switching UI",0,0);
+      break;
+    }
+    start_time = current_time;
+  }
+  //getPMXdata();
+  //pm10Graph();
   //drawMainWindow();
-  delay(1000);
+  //tempHumGraph();
 
 }
 
@@ -138,14 +188,14 @@ void drawMainWindow() {
   sprite.setTextDatum(4); //set text orientation to center instead of top left
   //draw y axis labels
   for (int i = 2; i < 12; i += 2) {
-    sprite.drawString(String(i*10), 11, 153-(i*12));
+    sprite.drawString(String(i*10), 11, 153-(i*12), 1);
     for (int j = 0; j <284; j += 5) {
       sprite.drawPixel(21+j, 153-(i*12), TFT_WHITE);
     }
   }
   //draw x axis labels and bar chart
   for (int i = 0; i < 5; ++i) {
-    sprite.drawString(xLabel[i], (i+1)* (5+16+20) +(i*20), 160);
+    sprite.drawString(xLabel[i], (i+1)* (5+16+20) +(i*20), 163, 2);
     values[i] = random(5, 100);
     int x = (i+1)* (5+16+20) +(i*20);
     sprite.fillRect(x-8, 153-(round(values[i]*1.2)), 16, round(values[i]*1.2), TFT_WHITE); //multiply by 1.2 to scale the values to the graph y axis is 119px long and values are 0-100
@@ -160,6 +210,7 @@ void pm10Graph() {
   if (x != 10) {
     pm10Buffer.push(random(0, 100));
     if (x == 0) {
+      tft.fillScreen(TFT_BLACK);
       Graph(tft, x, pm10Buffer[x], 1, 40, 140, 260, 100, 0, 10, 1, 0, 100, 20, "", "", "", display1, YELLOW);
     }
     Trace(tft, x, pm10Buffer[x], 1, 40, 140, 260, 100, 0, 10, 1, 0, 100, 20, "PM10", "Last 10", "ug/m3", update1, YELLOW);
@@ -175,5 +226,56 @@ void pm10Graph() {
     for (decltype(pm10Buffer)::index_t i = 0; i < pm10Buffer.size(); ++i) {
       Trace(tft, i, pm10Buffer[i], 1, 40, 140, 260, 100, 0, 10, 1, 0, 100, 20, "PM10", "Last 10", "ug/m3", update1, YELLOW);
     }
+  }
+}
+
+void bootScreen() {
+  sprite.fillSprite(TFT_BLACK);
+  sprite.setTextColor(TFT_WHITE, TFT_BLACK);
+  sprite.setTextDatum(MC_DATUM);
+  sprite.drawString("PMX Ground Station v1.0", 160, 20, 4);
+  sprite.pushImage(121, 40, 78, 81, fox);
+  sprite.drawString("by", 160, 130, 2);
+  sprite.setFreeFont(&Rock_Salt_Regular_10);
+  sprite.drawString("Marcel Oliveira", 160, 150);
+  sprite.pushSprite(0,0);
+  delay(3000);
+  tft.fillScreen(TFT_BLACK);
+  sprite.setTextDatum(0);
+  sprite.setFreeFont();
+}
+
+void tempHumGraph() {
+  //temp
+  tft.setTextDatum(0);
+  drawSaleSmallGauge(tft);
+  hum_02 = random(0,100);
+  tft.drawString("Humidity:", 10, 0, 4);
+  tft.drawString(String(hum_02), 40, 30, 4);
+  tft.drawString("%", 70, 30, 4);
+  tft.drawString("100", 0, 55, 2);
+  tft.drawString("40", 115, 155, 2);
+  needleMeter(tft);
+}
+
+//button handler
+void btnHandler(Button2 &btn) {
+  switch (btn.getType()) {
+    case single_click:
+      if (currentUIwindow >= 4 || currentUIwindow < 0) {
+        currentUIwindow = 0;
+      }
+      else {
+        ++currentUIwindow;
+      }
+      break;
+    case double_click:
+      if (currentUIwindow <= 0) {
+        currentUIwindow = 4;
+      }
+      else {
+        --currentUIwindow;
+      }
+      break;
   }
 }
