@@ -26,20 +26,27 @@ struct nrfDataStruct{
 //adc in use
 char adcSelection[10];
 //graph labels
-String xLabel[5] = {"pm10","sum","temp","hum","adc0"}; //main window bar chart labels
-int values[5] = {0}; // store pmx values to iterate over them
-unsigned int x = 0; //graph iterator (track last 10 values)
-CircularBuffer<int, 11> pm10Buffer;
+String xLabel[5] = {"pm10","sum","temp","hum","adc"}; //main window bar chart labels
+float values[5] = {0}; // store pmx values to iterate over them
+unsigned int xPM10 = 0; //graph iterator (track last 10 values)
+unsigned int xSum = 0;
+unsigned int xADC = 0;
+CircularBuffer<float, 11> pm10Buffer;
+CircularBuffer<float, 11> sumBuffer;
+CircularBuffer<float, 11> adcBuffer;
 uint8_t currentUIwindow = 0; //0 = main window, 1 = pm10 graph, 2 = sum graph, 3 = temp & hum graph, 4 = adc0 graph
 
+
 //millis delay
-unsigned long start_time, current_time, delay_time;
+unsigned long start_time, current_time, delay_time, start_timePMX, delay_timePMX;
 
 //functions prototypes
 void getPMXdata();
 void bootScreen();
 void drawMainWindow();
 void pm10Graph();
+void sumBinsGraph ();
+void adcGraph();
 void tempHumGraph();
 void btnHandler(Button2& btn);
 
@@ -62,7 +69,7 @@ void setup() {
   Serial.begin(115200);
   if (!radio.begin()) {
     Serial.println("radio hardware is not responding!!!");
-    //return;
+    return;
   }
   radio.openReadingPipe(1, 1); //Tansmitter uses 0 as default pipe so we use 1 as receiver (0-5)
   radio.setChannel(108); //PMX channel
@@ -96,14 +103,19 @@ void setup() {
 
   // init millis delay
   delay_time = 1000;
+  delay_timePMX = 200;
   current_time = millis();
   start_time = current_time;
+  start_timePMX = current_time;
   
 }
 
 void loop() {
-
   current_time = millis();
+  if (current_time - start_timePMX >= delay_timePMX) {
+    getPMXdata();
+    start_timePMX = current_time;
+  }
   btnUI.loop();
   if (current_time - start_time >= delay_time) {
     switch (currentUIwindow)
@@ -119,10 +131,10 @@ void loop() {
       tempHumGraph();
       break;
     case 3:
-      drawMainWindow();
+      sumBinsGraph();
       break;
     case 4:
-      pm10Graph();
+      adcGraph();
       break;
     default:
       tft.fillScreen(TFT_BLACK);
@@ -168,7 +180,8 @@ void getPMXdata() {
     break;
   default:
     if (data.change > 6 || data.change < 0) {
-      strcpy(adcSelection, "error");
+      //strcpy(adcSelection, "error");
+      itoa(data.change, adcSelection, 10);
     }
     break;
   }
@@ -193,10 +206,14 @@ void drawMainWindow() {
       sprite.drawPixel(21+j, 153-(i*12), TFT_WHITE);
     }
   }
+  values[0] = data.pm10;
+  values[1] = data.sumBins;
+  values[2] = data.temp;
+  values[3] = data.hum;
+  values[4] = data.xtra;
   //draw x axis labels and bar chart
   for (int i = 0; i < 5; ++i) {
     sprite.drawString(xLabel[i], (i+1)* (5+16+20) +(i*20), 163, 2);
-    values[i] = random(5, 100);
     int x = (i+1)* (5+16+20) +(i*20);
     sprite.fillRect(x-8, 153-(round(values[i]*1.2)), 16, round(values[i]*1.2), TFT_WHITE); //multiply by 1.2 to scale the values to the graph y axis is 119px long and values are 0-100
     sprite.drawString(String(values[i]), (i+1) * (5+16+20) +(i*20), 15, 2);
@@ -207,24 +224,70 @@ void drawMainWindow() {
 
 void pm10Graph() {
 
-  if (x != 10) {
-    pm10Buffer.push(random(0, 100));
-    if (x == 0) {
+  if (xPM10 != 10) {
+    pm10Buffer.push(data.pm10);
+    if (xPM10 == 0) {
       tft.fillScreen(TFT_BLACK);
-      Graph(tft, x, pm10Buffer[x], 1, 40, 140, 260, 100, 0, 10, 1, 0, 100, 20, "", "", "", display1, YELLOW);
+      Graph(tft, xPM10, pm10Buffer[xPM10], 1, 40, 140, 260, 100, 0, 10, 1, 0, 100, 20, "", "", "", display1, YELLOW);
     }
-    Trace(tft, x, pm10Buffer[x], 1, 40, 140, 260, 100, 0, 10, 1, 0, 100, 20, "PM10", "Last 10", "ug/m3", update1, YELLOW);
-    ++x;
+    Trace(tft, xPM10, pm10Buffer[xPM10], 1, 40, 140, 260, 100, 0, 10, 1, 0, 100, 20, "PM10", "Last 10", "ug/m3", update1, YELLOW);
+    ++xPM10;
   }
   else {
     //plot buffer
     tft.fillScreen(TFT_BLACK);
     display1 = true;
     update1 = true;
-    pm10Buffer.push(random(0, 100));
+    pm10Buffer.push(data.pm10);
     Graph(tft, 0, pm10Buffer[0], 1, 40, 140, 260, 100, 0, 10, 1, 0, 100, 20, "", "", "", display1, YELLOW);
     for (decltype(pm10Buffer)::index_t i = 0; i < pm10Buffer.size(); ++i) {
       Trace(tft, i, pm10Buffer[i], 1, 40, 140, 260, 100, 0, 10, 1, 0, 100, 20, "PM10", "Last 10", "ug/m3", update1, YELLOW);
+    }
+  }
+}
+
+void sumBinsGraph() {
+  if (xSum != 10) {
+    sumBuffer.push(data.sumBins);
+    if (xSum == 0) {
+      tft.fillScreen(TFT_BLACK);
+      Graph(tft, xSum, sumBuffer[xSum], 1, 40, 140, 260, 100, 0, 10, 1, 0, 100, 20, "", "", "", display1, YELLOW);
+    }
+    Trace(tft, xSum, sumBuffer[xSum], 1, 40, 140, 260, 100, 0, 10, 1, 0, 100, 20, "Sum", "Last 10", "ug/m3", update1, YELLOW);
+    ++xSum;
+  }
+  else {
+    //plot buffer
+    tft.fillScreen(TFT_BLACK);
+    display1 = true;
+    update1 = true;
+    sumBuffer.push(data.sumBins);
+    Graph(tft, 0, sumBuffer[0], 1, 40, 140, 260, 100, 0, 10, 1, 0, 100, 20, "", "", "", display1, YELLOW);
+    for (decltype(sumBuffer)::index_t i = 0; i < sumBuffer.size(); ++i) {
+      Trace(tft, i, sumBuffer[i], 1, 40, 140, 260, 100, 0, 10, 1, 0, 100, 20, "Sum", "Last 10", "ug/m3", update1, YELLOW);
+    }
+  }
+}
+
+void adcGraph() {
+  if (xADC != 10) {
+    adcBuffer.push(data.xtra);
+    if (xADC == 0) {
+      tft.fillScreen(TFT_BLACK);
+      Graph(tft, xADC, adcBuffer[xADC], 1, 40, 140, 260, 100, 0, 10, 1, 0, 100, 20, "", "", "", display1, YELLOW);
+    }
+    Trace(tft, xADC, adcBuffer[xADC], 1, 40, 140, 260, 100, 0, 10, 1, 0, 100, 20, adcSelection, "Last 10", "ug/m3", update1, YELLOW);
+    ++xADC;
+  }
+  else {
+    //plot buffer
+    tft.fillScreen(TFT_BLACK);
+    display1 = true;
+    update1 = true;
+    adcBuffer.push(data.xtra);
+    Graph(tft, 0, adcBuffer[0], 1, 40, 140, 260, 100, 0, 10, 1, 0, 100, 20, "", "", "", display1, YELLOW);
+    for (decltype(adcBuffer)::index_t i = 0; i < adcBuffer.size(); ++i) {
+      Trace(tft, i, adcBuffer[i], 1, 40, 140, 260, 100, 0, 10, 1, 0, 100, 20, adcSelection, "Last 10", "ug/m3", update1, YELLOW);
     }
   }
 }
@@ -246,16 +309,31 @@ void bootScreen() {
 }
 
 void tempHumGraph() {
-  //temp
+  //hum
+  pivotNeedle_x = 30;
+  center_x1 = 25;
+  pivot_x = 30;
   tft.setTextDatum(0);
-  drawSaleSmallGauge(tft);
-  hum_02 = random(0,100);
+  drawScaleGaugeLeft(tft);
   tft.drawString("Humidity:", 10, 0, 4);
-  tft.drawString(String(hum_02), 40, 30, 4);
-  tft.drawString("%", 70, 30, 4);
+  tft.drawString(String(data.hum), 35, 30, 4);
+  tft.drawString("%", 100, 30, 4);
   tft.drawString("100", 0, 55, 2);
   tft.drawString("40", 115, 155, 2);
-  needleMeter(tft);
+  needleMeterLeft(tft, data.hum);
+  //temp
+  pivotNeedle_x = 290;
+  center_x1 = 285;
+  pivot_x = 290;
+  drawScaleGaugeRight(tft);
+  tft.setTextDatum(TR_DATUM);
+  tft.drawString("Temperature:", 310, 0, 4);
+  tft.drawString("`C", 285, 30, 4);
+  tft.drawString(String(data.temp), 255, 30, 4);
+  tft.drawString("-10", 205, 155, 2);
+  tft.drawString("50", 320, 55, 2);
+  tft.setTextDatum(0);
+  needleMeterRight(tft, data.temp);
 }
 
 //button handler
