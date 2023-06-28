@@ -1,3 +1,5 @@
+#pragma once
+
 #include <Arduino.h>
 #include <TFT_eSPI.h>
 #include <SPI.h>
@@ -89,7 +91,7 @@ void needleMeterRight (TFT_eSPI &tft, float &value){
 
    tft.drawLine (pivotNeedle_x, pivotNeedle_y, needle_x_old, needle_y_old, 0);              // remove old needle by overwritig in white
    
-   angleNeedle = (180*DEG2RAD + 1.5*(round(value)+10)*DEG2RAD);                               // contains a 1.5 stretch factor to expand 60 percentage points over 90 degrees of scale
+   angleNeedle = (180*DEG2RAD + 1.5*(round(value)+10)*DEG2RAD);                             // contains a 1.5 stretch factor to expand 60 percentage points over 90 degrees of scale
 
    if (angleNeedle < 3.14159) angleNeedle = 3.14159;                                        // prevents the needle from ducking below horizontal
    if (angleNeedle > 4.71239) angleNeedle = 4.71239;                                        // prevents the needle from ducking above vertical

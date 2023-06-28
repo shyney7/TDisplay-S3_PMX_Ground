@@ -3,7 +3,7 @@
 // Time generated : Fri, 16 Jun 23 09:29:42 +0200  (Server timezone: CET)
 // Image Size     : 78x81 pixels
 // Memory usage   : 12636 bytes
-
+#pragma once
 
 #if defined(__AVR__)
     #include <avr/pgmspace.h>

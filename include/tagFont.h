@@ -1,5 +1,6 @@
 // Created by http://oleddisplay.squix.ch/ Consider a donation
 // In case of problems make sure that you are using the font file with the correct version!
+#pragma once
 const uint8_t Rock_Salt_Regular_10Bitmaps[] PROGMEM = {
 
 	// Bitmap Data:

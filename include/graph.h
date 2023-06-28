@@ -5,16 +5,16 @@
   Revisions
   rev     date        author      description
   1       12-24-2015  kasprzak    initial creation
+  2       06-27-2023  oliveira    modiefied to work as a library
 
   Updated by Bodmer to be an example for the library here:
   https://github.com/Bodmer/TFT_eSPI
   
 */
+#pragma once
 
 #include <TFT_eSPI.h> // Hardware-specific library
 #include <SPI.h>
-
-//TFT_eSPI tft = TFT_eSPI();                   // Invoke custom library with default width and height
 
 
 #define LTBLUE    0xB6DF
