@@ -35,10 +35,11 @@ CircularBuffer<float, 11> pm10Buffer;
 CircularBuffer<float, 11> sumBuffer;
 CircularBuffer<float, 11> adcBuffer;
 uint8_t currentUIwindow = 0; //0 = main window, 1 = pm10 graph, 2 = sum graph, 3 = temp & hum graph, 4 = adc0 graph
+int deb = 0; //debounce touch
 
 
 //millis delay
-unsigned long start_time, current_time, delay_time, start_timePMX, delay_timePMX;
+unsigned long start_time, current_time, delay_time, start_timePMX, delay_timePMX, delay_timeTouch, start_timeTouch;
 
 //functions prototypes
 void getPMXdata();
@@ -49,6 +50,7 @@ void sumBinsGraph ();
 void adcGraph();
 void tempHumGraph();
 void btnHandler(Button2& btn);
+void switchTouch();
 
 //RF24
 RF24 radio(3, 10); //CE, CSN
@@ -59,7 +61,7 @@ TFT_eSPI tft = TFT_eSPI();
 TFT_eSprite sprite = TFT_eSprite(&tft);
 
 //Touch Wire1 in case other I2C devices are connected to Wire (most libs use Wire as default)
-TouchLib touch(Wire1, PIN_IIC_SDA, PIN_IIC_SCL, CTS820_SLAVE_ADDRESS, PIN_TOUCH_RES);
+TouchLib touch(Wire, PIN_IIC_SDA, PIN_IIC_SCL, CTS820_SLAVE_ADDRESS, PIN_TOUCH_RES);
 
 //Buttons
 Button2 btnUI;
@@ -84,7 +86,6 @@ void setup() {
   btnUI.setDoubleClickHandler(btnHandler);
 
   // init TFT and Touch
-  Wire1.begin(PIN_IIC_SDA, PIN_IIC_SCL);
   pinMode(PIN_POWER_ON, OUTPUT);
   digitalWrite(PIN_POWER_ON, HIGH);
   pinMode(PIN_TOUCH_RES, OUTPUT);
@@ -99,24 +100,34 @@ void setup() {
   sprite.setTextColor(TFT_WHITE,TFT_BLACK);
   sprite.fillSprite(TFT_BLACK);
   sprite.setSwapBytes(true);
+  Wire.begin(PIN_IIC_SDA, PIN_IIC_SCL);
   bootScreen();
 
   // init millis delay
   delay_time = 1000;
-  delay_timePMX = 200;
+  delay_timePMX = 10;
+  delay_timeTouch = 10;
   current_time = millis();
   start_time = current_time;
   start_timePMX = current_time;
+  start_timeTouch = current_time;
   
 }
 
 void loop() {
   current_time = millis();
+
   if (current_time - start_timePMX >= delay_timePMX) {
     getPMXdata();
     start_timePMX = current_time;
   }
+
   btnUI.loop();
+  if (current_time - start_timeTouch >= delay_timeTouch) {
+    switchTouch();
+    start_timeTouch = current_time;
+  }
+
   if (current_time - start_time >= delay_time) {
     switch (currentUIwindow)
     {
@@ -179,10 +190,10 @@ void getPMXdata() {
     strcpy(adcSelection, "ADC23Diff");
     break;
   default:
-    if (data.change > 6 || data.change < 0) {
+    /* if (data.change > 6 || data.change < 0) {
       //strcpy(adcSelection, "error");
-      itoa(data.change, adcSelection, 10);
-    }
+      //itoa(data.change, adcSelection, 10);
+    } */
     break;
   }
 }
@@ -215,7 +226,7 @@ void drawMainWindow() {
   for (int i = 0; i < 5; ++i) {
     sprite.drawString(xLabel[i], (i+1)* (5+16+20) +(i*20), 163, 2);
     int x = (i+1)* (5+16+20) +(i*20);
-    sprite.fillRect(x-8, 153-(round(values[i]*1.2)), 16, round(values[i]*1.2), TFT_WHITE); //multiply by 1.2 to scale the values to the graph y axis is 119px long and values are 0-100
+    sprite.fillRect(x-8, 153-(round(values[i]*1.2)), 16, round(values[i]*1.2), TFT_WHITE); //multiply by 1.2 to scale the values to the y axis is 119px long and values are 0-100
     sprite.drawString(String(values[i]), (i+1) * (5+16+20) +(i*20), 15, 2);
   }
   //push sprite to TFT
@@ -224,9 +235,12 @@ void drawMainWindow() {
 
 void pm10Graph() {
 
+  //fill buffer and draw graph
   if (xPM10 != 10) {
     pm10Buffer.push(data.pm10);
     if (xPM10 == 0) {
+      display1 = true;
+      update1 = true;
       tft.fillScreen(TFT_BLACK);
       Graph(tft, xPM10, pm10Buffer[xPM10], 1, 40, 140, 260, 100, 0, 10, 1, 0, 100, 20, "", "", "", display1, YELLOW);
     }
@@ -234,7 +248,7 @@ void pm10Graph() {
     ++xPM10;
   }
   else {
-    //plot buffer
+    //plot fifo buffer
     tft.fillScreen(TFT_BLACK);
     display1 = true;
     update1 = true;
@@ -247,9 +261,12 @@ void pm10Graph() {
 }
 
 void sumBinsGraph() {
+  //fill buffer and draw graph
   if (xSum != 10) {
     sumBuffer.push(data.sumBins);
     if (xSum == 0) {
+      display1 = true;
+      update1 = true;
       tft.fillScreen(TFT_BLACK);
       Graph(tft, xSum, sumBuffer[xSum], 1, 40, 140, 260, 100, 0, 10, 1, 0, 100, 20, "", "", "", display1, YELLOW);
     }
@@ -257,7 +274,7 @@ void sumBinsGraph() {
     ++xSum;
   }
   else {
-    //plot buffer
+    //plot fifo buffer
     tft.fillScreen(TFT_BLACK);
     display1 = true;
     update1 = true;
@@ -270,9 +287,12 @@ void sumBinsGraph() {
 }
 
 void adcGraph() {
+  //fill buffer and draw graph
   if (xADC != 10) {
     adcBuffer.push(data.xtra);
     if (xADC == 0) {
+      display1 = true;
+      update1 = true;
       tft.fillScreen(TFT_BLACK);
       Graph(tft, xADC, adcBuffer[xADC], 1, 40, 140, 260, 100, 0, 10, 1, 0, 100, 20, "", "", "", display1, YELLOW);
     }
@@ -280,7 +300,7 @@ void adcGraph() {
     ++xADC;
   }
   else {
-    //plot buffer
+    //plot fifo buffer
     tft.fillScreen(TFT_BLACK);
     display1 = true;
     update1 = true;
@@ -299,7 +319,7 @@ void bootScreen() {
   sprite.drawString("PMX Ground Station v1.0", 160, 20, 4);
   sprite.pushImage(121, 40, 78, 81, fox);
   sprite.drawString("by", 160, 130, 2);
-  sprite.setFreeFont(&Rock_Salt_Regular_10);
+  sprite.setFreeFont(&Rock_Salt_Regular_11);
   sprite.drawString("Marcel Oliveira", 160, 150);
   sprite.pushSprite(0,0);
   delay(3000);
@@ -309,7 +329,7 @@ void bootScreen() {
 }
 
 void tempHumGraph() {
-  //hum
+  //hum left needle gauge
   pivotNeedle_x = 30;
   center_x1 = 25;
   pivot_x = 30;
@@ -321,7 +341,7 @@ void tempHumGraph() {
   tft.drawString("100", 0, 55, 2);
   tft.drawString("40", 115, 155, 2);
   needleMeterLeft(tft, data.hum);
-  //temp
+  //temp right needle gauge
   pivotNeedle_x = 290;
   center_x1 = 285;
   pivot_x = 290;
@@ -356,4 +376,34 @@ void btnHandler(Button2 &btn) {
       }
       break;
   }
+}
+//do same as btnHandler but for touch
+void switchTouch() {
+
+   if (touch.read()) {
+    if (deb==0){
+      deb=1;
+      TP_Point t = touch.getPoint(0);
+      if (t.x >= 160) {
+        if (currentUIwindow >= 4 || currentUIwindow < 0) {
+          currentUIwindow = 0;
+        }
+        else {
+          ++currentUIwindow;
+        }
+      }
+      if (t.x < 160) {
+        if (currentUIwindow <= 0) {
+          currentUIwindow = 4;
+        }
+        else {
+          --currentUIwindow;
+        }
+      }
+    }
+  }
+  else {
+    deb=0;
+  }
+
 }
