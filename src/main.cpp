@@ -140,10 +140,10 @@ void loop() {
   }
 
   btnUI.loop();
-  if (current_time - start_timeTouch >= delay_timeTouch) {
+/*   if (current_time - start_timeTouch >= delay_timeTouch) {
     switchTouch();
     start_timeTouch = current_time;
-  }
+  } */
 
   if (current_time - start_time >= delay_time) {
     switch (currentUIwindow)
@@ -405,7 +405,8 @@ void switchTouch() {
         uint8_t n = touch.getPointNum();
         for (uint8_t i = 0; i < n; ++i) {
           TP_Point t = touch.getPoint(i);
-          if (t.y >= 160 && t.y < 320) {
+          Serial.println(t.y);
+          if ((t.y >= 160) && (t.y <= 320)) {
             if (currentUIwindow >= 4 || currentUIwindow < 0) {
               currentUIwindow = 0;
             }
