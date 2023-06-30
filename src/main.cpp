@@ -1,4 +1,5 @@
 #define TOUCH_MODULES_CST_SELF
+#define TOUCH_GET_FROM_INT 0
 #include <Arduino.h>
 #include <SPI.h>
 #include <RF24.h>
@@ -51,6 +52,7 @@ void adcGraph();
 void tempHumGraph();
 void btnHandler(Button2& btn);
 void switchTouch();
+void touchTask(void *pvParameters);
 
 //RF24
 RF24 radio(3, 10); //CE, CSN
@@ -65,6 +67,9 @@ TouchLib touch(Wire, PIN_IIC_SDA, PIN_IIC_SCL, CTS820_SLAVE_ADDRESS, PIN_TOUCH_R
 
 //Buttons
 Button2 btnUI;
+
+//Thread 0 Task
+TaskHandle_t Task1;
 
 void setup() {
   // init radio for reading
@@ -95,13 +100,25 @@ void setup() {
   tft.begin();
   tft.fillScreen(TFT_BLACK);
   tft.setRotation(1);
-  touch.setRotation(1);
   sprite.createSprite(320,170);
   sprite.setTextColor(TFT_WHITE,TFT_BLACK);
   sprite.fillSprite(TFT_BLACK);
   sprite.setSwapBytes(true);
   Wire.begin(PIN_IIC_SDA, PIN_IIC_SCL);
+  if (!touch.init()) {
+    Serial.println("touch hardware is not responding!!!");
+  }
   bootScreen();
+
+  // touch task core 0
+  xTaskCreatePinnedToCore(
+    touchTask,   /* Task function. */
+    "Task1",     /* name of task. */
+    10000,       /* Stack size of task */
+    NULL,        /* parameter of the task */
+    1,           /* priority of the task */
+    &Task1,      /* Task handle to keep track of created task */
+    0);          /* pin task to core 0 */
 
   // init millis delay
   delay_time = 1000;
@@ -379,31 +396,44 @@ void btnHandler(Button2 &btn) {
 }
 //do same as btnHandler but for touch
 void switchTouch() {
-
-   if (touch.read()) {
-    if (deb==0){
-      deb=1;
-      TP_Point t = touch.getPoint(0);
-      if (t.x >= 160) {
-        if (currentUIwindow >= 4 || currentUIwindow < 0) {
-          currentUIwindow = 0;
+    
+    char str_buf[100];
+    static uint8_t last_finger;
+    if (touch.read()) {
+      if (deb==0){
+        deb=1;
+        uint8_t n = touch.getPointNum();
+        for (uint8_t i = 0; i < n; ++i) {
+          TP_Point t = touch.getPoint(i);
+          if (t.y >= 160 && t.y < 320) {
+            if (currentUIwindow >= 4 || currentUIwindow < 0) {
+              currentUIwindow = 0;
+            }
+            else {
+              ++currentUIwindow;
+            }
+          }
+          if (t.y < 160) {
+            if (currentUIwindow <= 0) {
+              currentUIwindow = 4;
+            }
+            else {
+              --currentUIwindow;
+            }
+          }
         }
-        else {
-          ++currentUIwindow;
-        }
-      }
-      if (t.x < 160) {
-        if (currentUIwindow <= 0) {
-          currentUIwindow = 4;
-        }
-        else {
-          --currentUIwindow;
-        }
+        last_finger = n;
       }
     }
-  }
-  else {
-    deb=0;
-  }
+    else {
+      deb=0;
+    }
 
+}
+//core 0 task for touch. Default loop is on core 1
+void touchTask(void *pvParameters) {
+  while (true) {
+    switchTouch();
+    delay(1);
+  }
 }
