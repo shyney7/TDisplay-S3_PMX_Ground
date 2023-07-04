@@ -1,4 +1,5 @@
 #define TOUCH_MODULES_CST_SELF
+#define TOUCH_GET_FROM_INT 0
 #include <Arduino.h>
 #include <SPI.h>
 #include <RF24.h>
@@ -12,6 +13,7 @@
 #include <CircularBuffer.h>
 #include "ringMeter.h"
 #include <Button2.h>
+#include <pthread.h>
 
 //PMX Data Structure
 struct nrfDataStruct{
@@ -51,6 +53,7 @@ void adcGraph();
 void tempHumGraph();
 void btnHandler(Button2& btn);
 void switchTouch();
+void touchTask(void *pvParameters);
 
 //RF24
 RF24 radio(3, 10); //CE, CSN
@@ -66,6 +69,10 @@ TouchLib touch(Wire, PIN_IIC_SDA, PIN_IIC_SCL, CTS820_SLAVE_ADDRESS, PIN_TOUCH_R
 //Buttons
 Button2 btnUI;
 
+//Thread 0 Task
+static pthread_mutex_t uiMutex;
+TaskHandle_t Task1;
+
 void setup() {
   // init radio for reading
   Serial.begin(115200);
@@ -79,6 +86,11 @@ void setup() {
   radio.setAutoAck(false);  //size is fixed so we don't need acknoledgement
   radio.setPALevel(RF24_PA_LOW);
   radio.startListening();
+
+  //init mutex
+  if (pthread_mutex_init(&uiMutex, NULL) != 0) {
+    Serial.println("uiMutex init failed");
+  }
 
   // init buttons
   btnUI.begin(14);
@@ -95,13 +107,25 @@ void setup() {
   tft.begin();
   tft.fillScreen(TFT_BLACK);
   tft.setRotation(1);
-  touch.setRotation(1);
   sprite.createSprite(320,170);
   sprite.setTextColor(TFT_WHITE,TFT_BLACK);
   sprite.fillSprite(TFT_BLACK);
   sprite.setSwapBytes(true);
   Wire.begin(PIN_IIC_SDA, PIN_IIC_SCL);
+  if (!touch.init()) {
+    Serial.println("touch hardware is not responding!!!");
+  }
   bootScreen();
+
+  // touch task core 0
+  xTaskCreatePinnedToCore(
+    touchTask,   /* Task function. */
+    "Task1",     /* name of task. */
+    10000,       /* Stack size of task */
+    NULL,        /* parameter of the task */
+    1,           /* priority of the task */
+    &Task1,      /* Task handle to keep track of created task */
+    0);          /* pin task to core 0 */
 
   // init millis delay
   delay_time = 1000;
@@ -117,16 +141,25 @@ void setup() {
 void loop() {
   current_time = millis();
 
-  if (current_time - start_timePMX >= delay_timePMX) {
+   if (current_time - start_timePMX >= delay_timePMX) {
     getPMXdata();
     start_timePMX = current_time;
   }
 
   btnUI.loop();
-  if (current_time - start_timeTouch >= delay_timeTouch) {
+/*   if (current_time - start_timeTouch >= delay_timeTouch) {
     switchTouch();
     start_timeTouch = current_time;
-  }
+  } */
+  //DEBUG BLOCK
+/*   strcpy(adcSelection, "ADC2");
+  data.change = 2;
+  data.altitude = random(0,100);
+  data.hum = random(40,60);
+  data.pm10 = random(0,100);
+  data.sumBins = random(0,100);
+  data.temp = random(20,30);
+  data.xtra = random(0,100); */
 
   if (current_time - start_time >= delay_time) {
     switch (currentUIwindow)
@@ -358,7 +391,8 @@ void tempHumGraph() {
 
 //button handler
 void btnHandler(Button2 &btn) {
-  switch (btn.getType()) {
+  if (pthread_mutex_trylock(&uiMutex) == 0) {
+    switch (btn.getType()) {
     case single_click:
       if (currentUIwindow >= 4 || currentUIwindow < 0) {
         currentUIwindow = 0;
@@ -375,35 +409,55 @@ void btnHandler(Button2 &btn) {
         --currentUIwindow;
       }
       break;
-  }
+    }
+    pthread_mutex_unlock(&uiMutex);
+  }  
+
 }
 //do same as btnHandler but for touch
 void switchTouch() {
-
-   if (touch.read()) {
-    if (deb==0){
-      deb=1;
-      TP_Point t = touch.getPoint(0);
-      if (t.x >= 160) {
-        if (currentUIwindow >= 4 || currentUIwindow < 0) {
-          currentUIwindow = 0;
+    
+    char str_buf[100];
+    static uint8_t last_finger;
+    if (touch.read()) {
+      if (deb==0){
+        deb=1;
+        uint8_t n = touch.getPointNum();
+        for (uint8_t i = 0; i < n; ++i) {
+          TP_Point t = touch.getPoint(i);
+          Serial.println(t.y);
+          if ((t.y >= 160) && (t.y <= 320)) {
+            if (currentUIwindow >= 4 || currentUIwindow < 0) {
+              currentUIwindow = 0;
+            }
+            else {
+              ++currentUIwindow;
+            }
+          }
+          if (t.y < 160) {
+            if (currentUIwindow <= 0) {
+              currentUIwindow = 4;
+            }
+            else {
+              --currentUIwindow;
+            }
+          }
         }
-        else {
-          ++currentUIwindow;
-        }
-      }
-      if (t.x < 160) {
-        if (currentUIwindow <= 0) {
-          currentUIwindow = 4;
-        }
-        else {
-          --currentUIwindow;
-        }
+        last_finger = n;
       }
     }
-  }
-  else {
-    deb=0;
-  }
+    else {
+      deb=0;
+    }
 
+}
+//core 0 task for touch. Default loop is on core 1
+void touchTask(void *pvParameters) {
+  while (true) {
+    if (pthread_mutex_trylock(&uiMutex) == 0) {
+      switchTouch();
+      delay(1);
+      pthread_mutex_unlock(&uiMutex);
+    }
+  }
 }
