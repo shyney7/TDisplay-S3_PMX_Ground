@@ -13,6 +13,7 @@
 #include <CircularBuffer.h>
 #include "ringMeter.h"
 #include <Button2.h>
+#include <pthread.h>
 
 //PMX Data Structure
 struct nrfDataStruct{
@@ -69,6 +70,7 @@ TouchLib touch(Wire, PIN_IIC_SDA, PIN_IIC_SCL, CTS820_SLAVE_ADDRESS, PIN_TOUCH_R
 Button2 btnUI;
 
 //Thread 0 Task
+static pthread_mutex_t uiMutex;
 TaskHandle_t Task1;
 
 void setup() {
@@ -84,6 +86,11 @@ void setup() {
   radio.setAutoAck(false);  //size is fixed so we don't need acknoledgement
   radio.setPALevel(RF24_PA_LOW);
   radio.startListening();
+
+  //init mutex
+  if (pthread_mutex_init(&uiMutex, NULL) != 0) {
+    Serial.println("uiMutex init failed");
+  }
 
   // init buttons
   btnUI.begin(14);
@@ -134,7 +141,7 @@ void setup() {
 void loop() {
   current_time = millis();
 
-  if (current_time - start_timePMX >= delay_timePMX) {
+   if (current_time - start_timePMX >= delay_timePMX) {
     getPMXdata();
     start_timePMX = current_time;
   }
@@ -144,6 +151,15 @@ void loop() {
     switchTouch();
     start_timeTouch = current_time;
   } */
+  //DEBUG BLOCK
+/*   strcpy(adcSelection, "ADC2");
+  data.change = 2;
+  data.altitude = random(0,100);
+  data.hum = random(40,60);
+  data.pm10 = random(0,100);
+  data.sumBins = random(0,100);
+  data.temp = random(20,30);
+  data.xtra = random(0,100); */
 
   if (current_time - start_time >= delay_time) {
     switch (currentUIwindow)
@@ -375,7 +391,8 @@ void tempHumGraph() {
 
 //button handler
 void btnHandler(Button2 &btn) {
-  switch (btn.getType()) {
+  if (pthread_mutex_trylock(&uiMutex) == 0) {
+    switch (btn.getType()) {
     case single_click:
       if (currentUIwindow >= 4 || currentUIwindow < 0) {
         currentUIwindow = 0;
@@ -392,7 +409,10 @@ void btnHandler(Button2 &btn) {
         --currentUIwindow;
       }
       break;
-  }
+    }
+    pthread_mutex_unlock(&uiMutex);
+  }  
+
 }
 //do same as btnHandler but for touch
 void switchTouch() {
@@ -434,7 +454,10 @@ void switchTouch() {
 //core 0 task for touch. Default loop is on core 1
 void touchTask(void *pvParameters) {
   while (true) {
-    switchTouch();
-    delay(1);
+    if (pthread_mutex_trylock(&uiMutex) == 0) {
+      switchTouch();
+      delay(1);
+      pthread_mutex_unlock(&uiMutex);
+    }
   }
 }
