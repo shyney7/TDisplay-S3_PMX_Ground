@@ -30,14 +30,12 @@ char adcSelection[10];
 //graph labels
 String xLabel[5] = {"pm10","sum","temp","hum","adc"}; //main window bar chart labels
 float values[5] = {0}; // store pmx values to iterate over them
-unsigned int xPM10 = 0; //graph iterator (track last 10 values)
-unsigned int xSum = 0;
-unsigned int xADC = 0;
 CircularBuffer<float, 11> pm10Buffer;
 CircularBuffer<float, 11> sumBuffer;
 CircularBuffer<float, 11> adcBuffer;
 uint8_t currentUIwindow = 0; //0 = main window, 1 = pm10 graph, 2 = sum graph, 3 = temp & hum graph, 4 = adc0 graph
 int deb = 0; //debounce touch
+double yhigh, yinc; //graph y axis
 
 
 //millis delay
@@ -46,6 +44,7 @@ unsigned long start_time, current_time, delay_time, start_timePMX, delay_timePMX
 //functions prototypes
 void getPMXdata();
 void bootScreen();
+void clearScreen();
 void drawMainWindow();
 void pm10Graph();
 void sumBinsGraph ();
@@ -54,6 +53,9 @@ void tempHumGraph();
 void btnHandler(Button2& btn);
 void switchTouch();
 void touchTask(void *pvParameters);
+void fillBuffers();
+bool checkBuffer100(CircularBuffer<float, 11> &buffer);
+float maxBuffer(CircularBuffer<float, 11> &buffer);
 
 //RF24
 RF24 radio(3, 10); //CE, CSN
@@ -127,6 +129,12 @@ void setup() {
     &Task1,      /* Task handle to keep track of created task */
     0);          /* pin task to core 0 */
 
+  // fill buffers
+  fillBuffers();
+
+  //clear screen
+  delay(3000);
+  clearScreen();
   // init millis delay
   delay_time = 1000;
   delay_timePMX = 10;
@@ -135,7 +143,7 @@ void setup() {
   start_time = current_time;
   start_timePMX = current_time;
   start_timeTouch = current_time;
-  
+
 }
 
 void loop() {
@@ -268,80 +276,63 @@ void drawMainWindow() {
 
 void pm10Graph() {
 
-  //fill buffer and draw graph
-  if (xPM10 != 10) {
-    pm10Buffer.push(data.pm10);
-    if (xPM10 == 0) {
-      display1 = true;
-      update1 = true;
-      tft.fillScreen(TFT_BLACK);
-      Graph(tft, xPM10, pm10Buffer[xPM10], 1, 40, 140, 260, 100, 0, 10, 1, 0, 100, 20, "", "", "", display1, YELLOW);
-    }
-    Trace(tft, xPM10, pm10Buffer[xPM10], 1, 40, 140, 260, 100, 0, 10, 1, 0, 100, 20, "PM10", "Last 10", "ug/m3", update1, YELLOW);
-    ++xPM10;
+  //plot fifo buffer
+  tft.fillScreen(TFT_BLACK);
+  display1 = true;
+  update1 = true;
+  pm10Buffer.push(data.pm10);
+  if(checkBuffer100(pm10Buffer)) {
+    yhigh = (double) maxBuffer(pm10Buffer);
+    yinc = yhigh/5;
   }
   else {
-    //plot fifo buffer
-    tft.fillScreen(TFT_BLACK);
-    display1 = true;
-    update1 = true;
-    pm10Buffer.push(data.pm10);
-    Graph(tft, 0, pm10Buffer[0], 1, 40, 140, 260, 100, 0, 10, 1, 0, 100, 20, "", "", "", display1, YELLOW);
-    for (decltype(pm10Buffer)::index_t i = 0; i < pm10Buffer.size(); ++i) {
-      Trace(tft, i, pm10Buffer[i], 1, 40, 140, 260, 100, 0, 10, 1, 0, 100, 20, "PM10", "Last 10", "ug/m3", update1, YELLOW);
-    }
+    yhigh = 100;
+    yinc = 20;
   }
+  Graph(tft, 0, pm10Buffer[0], 1, 40, 140, 260, 100, 0, 10, 1, 0, yhigh, yinc, "", "", "", display1, YELLOW);
+  for (decltype(pm10Buffer)::index_t i = 0; i < pm10Buffer.size(); ++i) {
+    Trace(tft, i, pm10Buffer[i], 1, 40, 140, 260, 100, 0, 10, 1, 0, yhigh, yinc, "PM10", "Last 10", "ug/m3", update1, YELLOW);
+  }
+
 }
 
 void sumBinsGraph() {
-  //fill buffer and draw graph
-  if (xSum != 10) {
-    sumBuffer.push(data.sumBins);
-    if (xSum == 0) {
-      display1 = true;
-      update1 = true;
-      tft.fillScreen(TFT_BLACK);
-      Graph(tft, xSum, sumBuffer[xSum], 1, 40, 140, 260, 100, 0, 10, 1, 0, 100, 20, "", "", "", display1, YELLOW);
-    }
-    Trace(tft, xSum, sumBuffer[xSum], 1, 40, 140, 260, 100, 0, 10, 1, 0, 100, 20, "Sum", "Last 10", "ug/m3", update1, YELLOW);
-    ++xSum;
+  //plot fifo buffer
+  tft.fillScreen(TFT_BLACK);
+  display1 = true;
+  update1 = true;
+  sumBuffer.push(data.sumBins);
+  if(checkBuffer100(pm10Buffer)) {
+    yhigh = (double) maxBuffer(pm10Buffer);
+    yinc = yhigh/5;
   }
   else {
-    //plot fifo buffer
-    tft.fillScreen(TFT_BLACK);
-    display1 = true;
-    update1 = true;
-    sumBuffer.push(data.sumBins);
-    Graph(tft, 0, sumBuffer[0], 1, 40, 140, 260, 100, 0, 10, 1, 0, 100, 20, "", "", "", display1, YELLOW);
-    for (decltype(sumBuffer)::index_t i = 0; i < sumBuffer.size(); ++i) {
-      Trace(tft, i, sumBuffer[i], 1, 40, 140, 260, 100, 0, 10, 1, 0, 100, 20, "Sum", "Last 10", "ug/m3", update1, YELLOW);
-    }
+    yhigh = 100;
+    yinc = 20;
+  }
+  Graph(tft, 0, sumBuffer[0], 1, 40, 140, 260, 100, 0, 10, 1, 0, yhigh, yinc, "", "", "", display1, YELLOW);
+  for (decltype(sumBuffer)::index_t i = 0; i < sumBuffer.size(); ++i) {
+    Trace(tft, i, sumBuffer[i], 1, 40, 140, 260, 100, 0, 10, 1, 0, yhigh, yinc, "Sum", "Last 10", "ug/m3", update1, YELLOW);
   }
 }
 
 void adcGraph() {
-  //fill buffer and draw graph
-  if (xADC != 10) {
-    adcBuffer.push(data.xtra);
-    if (xADC == 0) {
-      display1 = true;
-      update1 = true;
-      tft.fillScreen(TFT_BLACK);
-      Graph(tft, xADC, adcBuffer[xADC], 1, 40, 140, 260, 100, 0, 10, 1, 0, 100, 20, "", "", "", display1, YELLOW);
-    }
-    Trace(tft, xADC, adcBuffer[xADC], 1, 40, 140, 260, 100, 0, 10, 1, 0, 100, 20, adcSelection, "Last 10", "ug/m3", update1, YELLOW);
-    ++xADC;
+  //plot fifo buffer
+  tft.fillScreen(TFT_BLACK);
+  display1 = true;
+  update1 = true;
+  adcBuffer.push(data.xtra);
+  if(checkBuffer100(pm10Buffer)) {
+    yhigh = (double) maxBuffer(pm10Buffer);
+    yinc = yhigh/5;
   }
   else {
-    //plot fifo buffer
-    tft.fillScreen(TFT_BLACK);
-    display1 = true;
-    update1 = true;
-    adcBuffer.push(data.xtra);
-    Graph(tft, 0, adcBuffer[0], 1, 40, 140, 260, 100, 0, 10, 1, 0, 100, 20, "", "", "", display1, YELLOW);
-    for (decltype(adcBuffer)::index_t i = 0; i < adcBuffer.size(); ++i) {
-      Trace(tft, i, adcBuffer[i], 1, 40, 140, 260, 100, 0, 10, 1, 0, 100, 20, adcSelection, "Last 10", "ug/m3", update1, YELLOW);
-    }
+    yhigh = 100;
+    yinc = 20;
+  }
+  Graph(tft, 0, adcBuffer[0], 1, 40, 140, 260, 100, 0, 10, 1, 0, 100, 20, "", "", "", display1, YELLOW);
+  for (decltype(adcBuffer)::index_t i = 0; i < adcBuffer.size(); ++i) {
+    Trace(tft, i, adcBuffer[i], 1, 40, 140, 260, 100, 0, 10, 1, 0, 100, 20, adcSelection, "Last 10", "ug/m3", update1, YELLOW);
   }
 }
 
@@ -355,10 +346,19 @@ void bootScreen() {
   sprite.setFreeFont(&Rock_Salt_Regular_11);
   sprite.drawString("Marcel Oliveira", 160, 150);
   sprite.pushSprite(0,0);
-  delay(3000);
+  //delay(3000);
+  //tft.fillScreen(TFT_BLACK);
+  //sprite.setTextDatum(0);
+  //sprite.setFreeFont();
+}
+void clearScreen() {
   tft.fillScreen(TFT_BLACK);
+  sprite.fillSprite(TFT_BLACK);
   sprite.setTextDatum(0);
   sprite.setFreeFont();
+  tft.setTextDatum(0);
+  tft.setFreeFont();
+  sprite.pushSprite(0,0);
 }
 
 void tempHumGraph() {
@@ -389,9 +389,20 @@ void tempHumGraph() {
   needleMeterRight(tft, data.temp);
 }
 
+//fill buffer function
+void fillBuffers() {
+    // fill buffers
+  while((!pm10Buffer.isFull()) || (!sumBuffer.isFull()) || (!adcBuffer.isFull())){
+    getPMXdata();
+    pm10Buffer.push(data.pm10);
+    sumBuffer.push(data.sumBins);
+    adcBuffer.push(data.xtra);
+  }
+}
+
 //button handler
 void btnHandler(Button2 &btn) {
-  if (pthread_mutex_trylock(&uiMutex) == 0) {
+  if (pthread_mutex_lock(&uiMutex) == 0) {
     switch (btn.getType()) {
     case single_click:
       if (currentUIwindow >= 4 || currentUIwindow < 0) {
@@ -454,10 +465,29 @@ void switchTouch() {
 //core 0 task for touch. Default loop is on core 1
 void touchTask(void *pvParameters) {
   while (true) {
-    if (pthread_mutex_trylock(&uiMutex) == 0) {
+    if (pthread_mutex_lock(&uiMutex) == 0) {
       switchTouch();
-      delay(1);
       pthread_mutex_unlock(&uiMutex);
+      delay(1);
     }
   }
+}
+
+bool checkBuffer100(CircularBuffer<float, 11> &buffer) {
+  for (uint8_t i = 0; i < buffer.size(); ++i) {
+    if (buffer[i] > 100) {
+      return true;
+    }
+  }
+  return false;
+}
+
+float maxBuffer(CircularBuffer<float, 11> &buffer) {
+  float max = 0;
+  for (uint8_t i = 0; i < buffer.size(); ++i) {
+    if (buffer[i] > max) {
+      max = buffer[i];
+    }
+  }
+  return max;
 }
