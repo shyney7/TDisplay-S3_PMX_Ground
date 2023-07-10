@@ -33,7 +33,7 @@ float values[5] = {0}; // store pmx values to iterate over them
 CircularBuffer<float, 11> pm10Buffer;
 CircularBuffer<float, 11> sumBuffer;
 CircularBuffer<float, 11> adcBuffer;
-uint8_t currentUIwindow = 0; //0 = main window, 1 = pm10 graph, 2 = sum graph, 3 = temp & hum graph, 4 = adc0 graph
+volatile uint8_t currentUIwindow = 0; //0 = main window, 1 = pm10 graph, 2 = sum graph, 3 = temp & hum graph, 4 = adc0 graph
 int deb = 0; //debounce touch
 double yhigh, yinc; //graph y axis
 
@@ -100,6 +100,7 @@ void setup() {
   btnUI.setDoubleClickHandler(btnHandler);
 
   // init TFT and Touch
+  pinMode(PIN_TOUCH_INT, INPUT_PULLUP);
   pinMode(PIN_POWER_ON, OUTPUT);
   digitalWrite(PIN_POWER_ON, HIGH);
   pinMode(PIN_TOUCH_RES, OUTPUT);
@@ -464,15 +465,19 @@ void switchTouch() {
 }
 //core 0 task for touch. Default loop is on core 1
 void touchTask(void *pvParameters) {
+  disableCore0WDT();
   while (true) {
-    if (pthread_mutex_lock(&uiMutex) == 0) {
-      switchTouch();
-      pthread_mutex_unlock(&uiMutex);
-      delay(1);
+    if(!digitalRead(PIN_TOUCH_INT)) {
+      if (pthread_mutex_lock(&uiMutex) == 0) {
+        enableCore0WDT();
+        switchTouch();
+        pthread_mutex_unlock(&uiMutex);
+        disableCore0WDT();
+        delay(1);
+      }
     }
   }
 }
-
 bool checkBuffer100(CircularBuffer<float, 11> &buffer) {
   for (uint8_t i = 0; i < buffer.size(); ++i) {
     if (buffer[i] > 100) {
