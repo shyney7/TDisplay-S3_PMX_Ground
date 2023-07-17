@@ -10,6 +10,7 @@
 #include "TouchLib.h"
 #include "fox.h"      // 78x81
 #include "tagFont.h"  //Rock_Salt_Regular_10
+#include "wifiGif.h"
 #include <CircularBuffer.h>
 #include "ringMeter.h"
 #include <Button2.h>
@@ -45,6 +46,7 @@ unsigned long start_time, current_time, delay_time, start_timePMX, delay_timePMX
 void getPMXdata();
 void bootScreen();
 void clearScreen();
+void noRFscreen();
 void drawMainWindow();
 void pm10Graph();
 void sumBinsGraph ();
@@ -78,16 +80,6 @@ TaskHandle_t Task1;
 void setup() {
   // init radio for reading
   Serial.begin(115200);
-  if (!radio.begin()) {
-    Serial.println("radio hardware is not responding!!!");
-    return;
-  }
-  radio.openReadingPipe(1, 1); //Tansmitter uses 0 as default pipe so we use 1 as receiver (0-5)
-  radio.setChannel(108); //PMX channel
-  radio.setDataRate(RF24_250KBPS); //PMX uses 250kbps (this is good for longer range)
-  radio.setAutoAck(false);  //size is fixed so we don't need acknoledgement
-  radio.setPALevel(RF24_PA_LOW);
-  radio.startListening();
 
   //init mutex
   if (pthread_mutex_init(&uiMutex, NULL) != 0) {
@@ -136,6 +128,17 @@ void setup() {
   //clear screen
   delay(3000);
   clearScreen();
+  //check RF24 connection
+  while(!radio.begin()) {
+    noRFscreen();
+  }
+  clearScreen();
+  radio.openReadingPipe(1, 1); //Tansmitter uses 0 as default pipe so we use 1 as receiver (0-5)
+  radio.setChannel(108); //PMX channel
+  radio.setDataRate(RF24_250KBPS); //PMX uses 250kbps (this is good for longer range)
+  radio.setAutoAck(false);  //size is fixed so we don't need acknoledgement
+  radio.setPALevel(RF24_PA_LOW);
+  radio.startListening();
   // init millis delay
   delay_time = 1000;
   delay_timePMX = 10;
@@ -359,6 +362,7 @@ void clearScreen() {
   sprite.setFreeFont();
   tft.setTextDatum(0);
   tft.setFreeFont();
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
   sprite.pushSprite(0,0);
 }
 
@@ -469,11 +473,8 @@ void touchTask(void *pvParameters) {
   while (true) {
     if(!digitalRead(PIN_TOUCH_INT)) {
       if (pthread_mutex_lock(&uiMutex) == 0) {
-        enableCore0WDT();
         switchTouch();
         pthread_mutex_unlock(&uiMutex);
-        disableCore0WDT();
-        delay(1);
       }
     }
   }
@@ -495,4 +496,18 @@ float maxBuffer(CircularBuffer<float, 11> &buffer) {
     }
   }
   return max;
+}
+
+void noRFscreen() {
+  tft.fillScreen(TFT_WHITE);
+  tft.setTextColor(TFT_BLACK, TFT_WHITE);
+  tft.drawString("No RF24 module detected", 5, 5, 2);
+  tft.drawString("Please power off and check connections", 5, 25, 2);
+  tft.drawString("hot swap is not recommended", 5, 45, 2);
+
+  for (uint8_t i=0; i < frames; ++i) {
+    //iterate over frames
+    delay(40);
+    tft.pushImage(240, 60, animation_width, animation_height, wifiGif[i]);
+  }
 }
