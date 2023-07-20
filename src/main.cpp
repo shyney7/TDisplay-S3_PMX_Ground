@@ -205,7 +205,7 @@ void loop() {
   //tempHumGraph();
 
 }
-
+//get data from PMX and check which adc is in use
 void getPMXdata() {
   if (radio.available()) {
     radio.read(&data, sizeof(data));
@@ -242,7 +242,7 @@ void getPMXdata() {
     break;
   }
 }
-
+//draw bar chart window
 void drawMainWindow() {
   sprite.fillSprite(TFT_BLACK);
   //draw cooridnate system
@@ -306,8 +306,8 @@ void sumBinsGraph() {
   display1 = true;
   update1 = true;
   sumBuffer.push(data.sumBins);
-  if(checkBuffer100(pm10Buffer)) {
-    yhigh = (double) maxBuffer(pm10Buffer);
+  if(checkBuffer100(sumBuffer)) {
+    yhigh = (double) maxBuffer(sumBuffer);
     yinc = yhigh/5;
   }
   else {
@@ -326,8 +326,8 @@ void adcGraph() {
   display1 = true;
   update1 = true;
   adcBuffer.push(data.xtra);
-  if(checkBuffer100(pm10Buffer)) {
-    yhigh = (double) maxBuffer(pm10Buffer);
+  if(checkBuffer100(adcBuffer)) {
+    yhigh = (double) maxBuffer(adcBuffer);
     yinc = yhigh/5;
   }
   else {
@@ -355,6 +355,7 @@ void bootScreen() {
   //sprite.setTextDatum(0);
   //sprite.setFreeFont();
 }
+//clear screen & reset text orientation + font
 void clearScreen() {
   tft.fillScreen(TFT_BLACK);
   sprite.fillSprite(TFT_BLACK);
@@ -365,7 +366,7 @@ void clearScreen() {
   tft.setTextColor(TFT_WHITE, TFT_BLACK);
   sprite.pushSprite(0,0);
 }
-
+//needle gauge for humidity and temperature
 void tempHumGraph() {
   //hum left needle gauge
   pivotNeedle_x = 30;
@@ -479,6 +480,7 @@ void touchTask(void *pvParameters) {
     }
   }
 }
+//Check if buffer has values over 100
 bool checkBuffer100(CircularBuffer<float, 11> &buffer) {
   for (uint8_t i = 0; i < buffer.size(); ++i) {
     if (buffer[i] > 100) {
@@ -487,7 +489,7 @@ bool checkBuffer100(CircularBuffer<float, 11> &buffer) {
   }
   return false;
 }
-
+//get max value from buffer
 float maxBuffer(CircularBuffer<float, 11> &buffer) {
   float max = 0;
   for (uint8_t i = 0; i < buffer.size(); ++i) {
@@ -497,7 +499,7 @@ float maxBuffer(CircularBuffer<float, 11> &buffer) {
   }
   return max;
 }
-
+//no RF24 module screen
 void noRFscreen() {
   tft.fillScreen(TFT_WHITE);
   tft.setTextColor(TFT_BLACK, TFT_WHITE);
