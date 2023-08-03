@@ -37,6 +37,7 @@ CircularBuffer<float, 11> adcBuffer;
 volatile uint8_t currentUIwindow = 0; //0 = main window, 1 = pm10 graph, 2 = sum graph, 3 = temp & hum graph, 4 = adc0 graph
 int deb = 0; //debounce touch
 double yhigh, yinc; //graph y axis
+//uint32_t volt; //battery voltage
 
 
 //millis delay
@@ -293,6 +294,8 @@ void pm10Graph() {
     yhigh = 100;
     yinc = 20;
   }
+  //volt = (analogRead(4) * 2 * 3.3 * 1000) / 4096;
+  //tft.drawString(String(volt)+" mV", 300, 5);
   Graph(tft, 0, pm10Buffer[0], 1, 40, 140, 260, 100, 0, 10, 1, 0, yhigh, yinc, "", "", "", display1, YELLOW);
   for (decltype(pm10Buffer)::index_t i = 0; i < pm10Buffer.size(); ++i) {
     Trace(tft, i, pm10Buffer[i], 1, 40, 140, 260, 100, 0, 10, 1, 0, yhigh, yinc, "PM10", "Last 10", "ug/m3", update1, YELLOW);
