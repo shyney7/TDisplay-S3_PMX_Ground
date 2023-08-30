@@ -138,7 +138,7 @@ void setup() {
   radio.setChannel(108); //PMX channel
   radio.setDataRate(RF24_250KBPS); //PMX uses 250kbps (this is good for longer range)
   radio.setAutoAck(false);  //size is fixed so we don't need acknoledgement
-  radio.setPALevel(RF24_PA_LOW);
+  radio.setPALevel(RF24_PA_MAX);
   radio.startListening();
   // init millis delay
   delay_time = 1000;
@@ -337,9 +337,9 @@ void adcGraph() {
     yhigh = 100;
     yinc = 20;
   }
-  Graph(tft, 0, adcBuffer[0], 1, 40, 140, 260, 100, 0, 10, 1, 0, 100, 20, "", "", "", display1, YELLOW);
+  Graph(tft, 0, adcBuffer[0], 1, 40, 140, 260, 100, 0, 10, 1, 0, yhigh, yinc, "", "", "", display1, YELLOW);
   for (decltype(adcBuffer)::index_t i = 0; i < adcBuffer.size(); ++i) {
-    Trace(tft, i, adcBuffer[i], 1, 40, 140, 260, 100, 0, 10, 1, 0, 100, 20, adcSelection, "Last 10", "ug/m3", update1, YELLOW);
+    Trace(tft, i, adcBuffer[i], 1, 40, 140, 260, 100, 0, 10, 1, 0, yhigh, yinc, adcSelection, "Last 10", "Raw", update1, YELLOW);
   }
 }
 
