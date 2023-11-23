@@ -2,7 +2,9 @@
 #define TOUCH_GET_FROM_INT 0
 #include <Arduino.h>
 #include <SPI.h>
+#include <RF24Network.h>
 #include <RF24.h>
+#include <RF24Mesh.h>
 #include <Wire.h>
 #include "graph.h"
 #include "TFT_eSPI.h"
@@ -25,6 +27,15 @@ struct nrfDataStruct{
   float altitude;
   float hum;
   float xtra;
+  float co2;
+  uint16_t year;
+  uint8_t month;
+  uint8_t day;
+  uint8_t hour;
+  uint8_t minute;
+  uint8_t second;
+  double lat;
+  double lng;
 }data;
 //adc in use
 char adcSelection[10];
@@ -62,6 +73,8 @@ float maxBuffer(CircularBuffer<float, 11> &buffer);
 
 //RF24
 RF24 radio(3, 10); //CE, CSN
+RF24Network network(radio);
+RF24Mesh mesh(radio, network);
 //const uint64_t pipe = 1; //PMX uses only the # 1 as pipe address, for whatever reason (imo it should be another random number to avoid collisions)
 
 //TFT
@@ -129,17 +142,25 @@ void setup() {
   //clear screen
   delay(3000);
   clearScreen();
+  // set nodeID to 0 for the master node
+  mesh.setNodeID(0);
   //check RF24 connection
   while(!radio.begin()) {
     noRFscreen();
   }
   clearScreen();
-  radio.openReadingPipe(1, 1); //Tansmitter uses 0 as default pipe so we use 1 as receiver (0-5)
-  radio.setChannel(108); //PMX channel
-  radio.setDataRate(RF24_250KBPS); //PMX uses 250kbps (this is good for longer range)
-  radio.setAutoAck(false);  //size is fixed so we don't need acknoledgement
+  //radio.openReadingPipe(1, 1); //Tansmitter uses 0 as default pipe so we use 1 as receiver (0-5)
+  //radio.setChannel(108); //PMX channel
+  //radio.setDataRate(RF24_250KBPS); //PMX uses 250kbps (this is good for longer range)
+  //radio.setAutoAck(false);  //size is fixed so we don't need acknoledgement
   radio.setPALevel(RF24_PA_MAX);
-  radio.startListening();
+  //radio.startListening();
+  while (!mesh.begin(MESH_DEFAULT_CHANNEL, RF24_250KBPS))
+  {
+    noRFscreen();
+  }
+  clearScreen();
+  
   // init millis delay
   delay_time = 1000;
   delay_timePMX = 10;
@@ -152,11 +173,20 @@ void setup() {
 }
 
 void loop() {
+
+  mesh.update();
+  mesh.DHCP();
+
   current_time = millis();
 
    if (current_time - start_timePMX >= delay_timePMX) {
     getPMXdata();
     start_timePMX = current_time;
+    Serial.println("CO2: " + String(data.co2) + "\nDate: ");
+    Serial.println(String(data.day) + "/" + String(data.month) + "/" + String(data.year) + " " + String(data.hour) + ":" + String(data.minute) + ":" + String(data.second));
+    Serial.print("Lat: "); Serial.println(data.lat, 6);
+    Serial.print("Lng: "); Serial.println(data.lng, 6);
+
   }
 
   btnUI.loop();
@@ -204,12 +234,25 @@ void loop() {
   //pm10Graph();
   //drawMainWindow();
   //tempHumGraph();
-
 }
 //get data from PMX and check which adc is in use
 void getPMXdata() {
-  if (radio.available()) {
+/*   if (radio.available()) {
     radio.read(&data, sizeof(data));
+  } */
+  if (network.available()) {
+    RF24NetworkHeader header;
+    network.peek(header);
+
+    switch (header.type) {
+      case 'A':
+        network.read(header, &data, sizeof(data));
+        break;
+      default:
+        network.read(header, 0, 0);
+        Serial.println(header.type);
+        break;
+    }
   }
 
   switch (data.change)
